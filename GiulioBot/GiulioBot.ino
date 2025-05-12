@@ -1,6 +1,5 @@
 #include <MPU6050_tockn.h>
 #include <Wire.h>
-#include <Arduino_FreeRTOS.h>
 #include "DLPF.h" 
 #include "PID.h"
 #include <AFMotor.h>
@@ -11,27 +10,30 @@
 #define     SOGLIA          0.5
 #define     KP              0.7
 #define     KI              0.07
-#define     KD              0.02
+#define     KD              0.06
 #define     PIN_M_dx        3
 #define     PIN_M_sx        4
 #define     LED1_PIN        13
 #define     F_C_MEAS        50.0 //Hz
-#define     T_S_LECTURE     1.0/100.0 //s
-#define     T_S_STAMP       1.0/20.0 //s
+#define     T_S_LECTURE     1.0/200.0 //s
+#define     T_S_STAMP       1.0/15.0 //s
 #define     T_S_CTRL        1.0/50.0
 
 
 static double velX = 0.0; 
 static double velY = 0.0;
-
+const double offset= 0.02;
 double acc_x_offset;
 double acc_y_offset;
 const double G = 9.80665;  
 double vx, vy;
 double acc_x, acc_y, z, z_;
 const double T_s_lecture = T_S_LECTURE* 1000, T_s_stamp = T_S_STAMP* 1000, T_s_ctrl = T_S_CTRL* 1000;
+double T_s_lecture_old = 0, T_s_stamp_old = 0, T_s_ctrl_old = 0;
 double s_z;
-double rif =90.00;
+char s_v;
+double rif_o =0.00;
+double rif_v =0.00;
 
 AF_DCMotor motorDX(PIN_M_dx);
 AF_DCMotor motorSX(PIN_M_sx);
@@ -43,9 +45,7 @@ LPF LPF_acc_x(F_C_MEAS, T_S_LECTURE);
 LPF LPF_acc_y(F_C_MEAS, T_S_LECTURE);
 LPF LPF_z(F_C_MEAS, T_S_LECTURE);
 
-void TaskStamp(void *pvParameters);
-void TaskLetturaIMU(void *pvParameters);
-void Task_Attuatore_Orientamento(void *pvParameters);
+
 
 void setup() {
   Serial.begin(115200);
@@ -63,86 +63,131 @@ void setup() {
 
   motorDX.run(RELEASE);
   motorSX.run(RELEASE);
-
-  xTaskCreate(TaskLetturaIMU, "LetturaIMU", 128, NULL,2, NULL);
-  xTaskCreate(Task_Attuatore_Orientamento, "Task_Attuatore_Orientamento", 128, NULL, 3, NULL);
-  xTaskCreate(TaskStamp, "Stampa", 128, NULL, 2, NULL);
-
-  vTaskStartScheduler();
-
+  
 }
 
 
 
-void TaskLetturaIMU(void *pvParameters) {
-  (void) pvParameters; // Silenzia il warning del parametro non usato
-  //acc_x_offset=0.6;
-  //acc_y_offset=0.03;
-  while (1) {
+
+void loop() {
+//LETTURA IMU
+  if (millis() - T_s_lecture_old >= T_s_lecture) {
     mpu6050.update();
-    //acc_x= LPF_acc_x.update((mpu6050.getAccX())*G);
-    //acc_y= LPF_acc_y.update((mpu6050.getAccY())*G);
-    //updateVelocity(acc_x, acc_y, T_S_LECTURE);
+    z= LPF_acc_y.update(mpu6050.getAngleZ());
+    s_z = PIDs_z.signal (rif_o, z, T_S_LECTURE);
+    T_s_lecture_old = millis();
+  }
+//CONTROLLO MOTORI
+  if (millis() - T_s_ctrl_old >= T_s_ctrl) {
+    Controllo_Orientamneto();
+    Controllo_Velocita(s_v);
+    T_s_ctrl_old = millis();
+  }
 
-    z= LPF_z.update(mpu6050.getAngleZ());
-    s_z= PIDs_z.signal (rif, z, T_S_LECTURE);
+//STAMPA VALORI e CAMBIO RIFERIMENTI
+  if (millis() - T_s_stamp_old >= T_s_stamp) {
     
-    vTaskDelay(T_s_lecture/ portTICK_PERIOD_MS); // (non bloccante)
+    char direction = "";
+    //s_v=direction;
+    static char inputBuffer[32];
+    static uint8_t idx = 0;
+
+    while (Serial.available() > 0) {
+        char c = Serial.read();
+        // Ignora CR
+        if (c == '\r') continue;
+
+        // Fine riga: processa il buffer
+        if (c == '\n') {
+          inputBuffer[idx] = '\0';
+          
+          // Se il buffer non è vuoto
+          if (idx > 0) {
+            // Se il primo carattere è una lettera A–Z o a–z
+            if ( (inputBuffer[0] >= 'A' && inputBuffer[0] <= 'Z') ||
+                (inputBuffer[0] >= 'a' && inputBuffer[0] <= 'z') ) {
+              // Prendi solo il primo carattere
+              direction = inputBuffer[0];
+              s_v=direction;
+            } else {
+              // Proviamo a convertire in float
+              char *endptr;
+              float value = strtod(inputBuffer, &endptr);
+              // Se endptr punta alla fine, la conversione è OK
+              if (endptr != inputBuffer && *endptr == '\0') {
+                // Controllo intervallo
+                if (value >= -180.0f && value <= 180.0f) {
+                  rif_o = value;
+                } else {
+                  Serial.println(F("Valore fuori range [-180,+180]"));
+                }
+              } else {
+                Serial.println(F("Formato numero non valido"));
+              }
+            }
+          }
+          
+          // Reset buffer per la prossima linea
+          idx = 0;
+
+        } else {
+          // Accumula carattere finché c'è spazio
+          if (idx < sizeof(inputBuffer) - 1) {
+            inputBuffer[idx++] = c;
+          }
+        }
+      }
+    
+  Serial.print(z);Serial.print(",");Serial.print(s_z);Serial.print(",");Serial.print(rif_o);Serial.print(",");Serial.print(s_v);Serial.println(";");
+  //Serial.print(vy);Serial.print(",");Serial.print(s_v);Serial.print(",");Serial.print(rif_v);Serial.println(";");
+
+  T_s_stamp_old = millis();
   }
 }
 
-void TaskStamp(void *pvParameters) {
-  (void) pvParameters; // Silenzia il warning del parametro non usato
-  
-  while (1) {
-    //Serial.print(mpu6050.getAccZ()*G);Serial.print(",");Serial.print(acc_x);Serial.print(",");Serial.print(acc_y);Serial.println(";");
-    //Serial.print(vx);Serial.print(",");Serial.print(vy);Serial.println(";");
-    
-    vTaskDelay(T_s_stamp / portTICK_PERIOD_MS); // Aspetta 1000 ms (non bloccante)
-  }
-}
 
-void Task_Attuatore_Orientamento(void *pvParameters) {
-  (void) pvParameters; // Silenzia il warning del parametro non usato
-  
-  while (1) {
-    //digitalWrite(LED1_PIN, !digitalRead(LED1_PIN)); // Inverte lo stato del LED
-    if(s_z>0){
+
+void Controllo_Orientamneto(){
+   if(s_z>0+ offset){
       motorDX.run(FORWARD);
       motorSX.run(BACKWARD);
-      while (s_z>0){
-        motorDX.setSpeed(int(s_z*255));
-        motorSX.setSpeed(int(s_z*200));
-        vTaskDelay(T_s_ctrl / portTICK_PERIOD_MS); 
-      }
-    }else if (s_z<0){
+      motorDX.setSpeed(int(s_z*255));
+      motorSX.setSpeed(int(s_z*255));
+      
+    }else if (s_z<0 -offset){
       motorDX.run(BACKWARD);
       motorSX.run(FORWARD);
-      while (s_z<0){
-        motorDX.setSpeed(int(-s_z*255));
-        motorSX.setSpeed(int(-s_z*200));
-        vTaskDelay(T_s_ctrl / portTICK_PERIOD_MS); 
-      }
-      }else if (s_z=0){
+      motorDX.setSpeed(int(-s_z*255));
+      motorSX.setSpeed(int(-s_z*255));
+    }else if (abs(s_z)<=offset){
       motorDX.run(RELEASE);
       motorSX.run(RELEASE);    
     }
-    vTaskDelay(T_s_ctrl / portTICK_PERIOD_MS); 
-    // Aspetta 1000 ms (non bloccante)
-  }
 }
 
 
-void updateVelocity(double accX, double accY, double DT) {
-    // integrazione semplice: v = v_prev + a * dt
-    velX = velX + accX * DT;
-    velY = velY + accY * DT;
 
-    // output
-    vx = velX;
-    vy = velY;
-}
-
-void loop() {
-  Serial.print(z);Serial.print(",");Serial.print(s_z);Serial.print(",");Serial.print(rif);Serial.println(";");
+void Controllo_Velocita(char signal){
+   switch(signal){
+    case 'f':
+      motorDX.run(FORWARD);
+      motorSX.run(FORWARD);
+      motorDX.setSpeed(255);
+      motorSX.setSpeed(255);
+      break;
+      
+    case 'b':
+      motorDX.run(BACKWARD);
+      motorSX.run(BACKWARD);
+      motorDX.setSpeed(255);
+      motorSX.setSpeed(255);
+      break;
+    case 's':
+      motorDX.run(RELEASE);
+      motorSX.run(RELEASE);    
+      break;
+    default :
+      s_v = '';
+      break;
+   }
 }
