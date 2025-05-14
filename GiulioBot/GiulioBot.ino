@@ -14,10 +14,10 @@
 #define     PIN_M_sx        4
 #define     LED1_PIN        13
 //Periodi di attivazione
-#define     F_C_MEAS        50.0 //Hz
-#define     T_S_LECTURE     1.0/200.0 //s
-#define     T_S_STAMP       1.0/15.0 //s
-#define     T_S_CTRL        1.0/50.0
+#define     F_C_MEAS        50.0        //Hz
+#define     T_S_LECTURE     1.0/200.0   //s
+#define     T_S_STAMP       1.0/15.0    //s
+#define     T_S_CTRL        1.0/50.0    //s
 
 
 //variabili
@@ -90,13 +90,13 @@ void loop() {
 
 
 void Controllo_Orientamneto(double signal){
-   if(signal>0+ SOGLIA){
+   if(signal> SOGLIA){
       motorDX.run(FORWARD);
       motorSX.run(BACKWARD);
       motorDX.setSpeed(int(s_z*255));
       motorSX.setSpeed(int(s_z*255));
       
-    }else if (signal<0 -SOGLIA){
+    }else if (signal< -SOGLIA){
       motorDX.run(BACKWARD);
       motorSX.run(FORWARD);
       motorDX.setSpeed(int(-s_z*255));
@@ -127,7 +127,7 @@ void Controllo_Velocita(char signal){
       break;
 
     default :
-      s_v ="" ;
+      s_v ="\0" ;
       break;
    }
 }
