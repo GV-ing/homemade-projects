@@ -2,17 +2,19 @@
 #include <Wire.h>
 #include "DLPF.h" 
 #include "PID.h"
-#include <AFMotor.h>
 
 //Parametri PID
 #define     SOGLIA          0.2
-#define     KP              0.7
-#define     KI              0.07
-#define     KD              0.06
+#define     KP              0.4
+#define     KI              0.04
+#define     KD              0.03
 //PIN
 #define     PIN_M_dx        3
-#define     PIN_M_sx        4
-#define     LED1_PIN        13
+#define     PIN_M_sx        11
+#define     DIRA            12
+#define     DIRB            13
+#define     LED1_PIN        7
+
 //Periodi di attivazione
 #define     F_C_MEAS        50.0        //Hz
 #define     T_S_LECTURE     1.0/200.0   //s
@@ -29,9 +31,6 @@ char s_v;
 //costanti
 const double T_s_lecture = T_S_LECTURE* 1000.00, T_s_stamp = T_S_STAMP* 1000.00, T_s_ctrl = T_S_CTRL* 1000.00;
 
-//Definizione motori
-AF_DCMotor motorDX(PIN_M_dx);
-AF_DCMotor motorSX(PIN_M_sx);
 
 //Definizione PID
 PID PIDs_z (SOGLIA, KP , KI, KD);
@@ -47,6 +46,8 @@ void setup() {
   Serial.begin(115200);
 
   pinMode(LED1_PIN, OUTPUT);
+  pinMode(DIRA, OUTPUT);
+  pinMode(DIRB, OUTPUT);
 
   Wire.begin();
 
@@ -54,9 +55,8 @@ void setup() {
   mpu6050.calcGyroOffsets(true);
   mpu6050.update();
   LPF_z.set_initial_condition(mpu6050.getAngleZ());
-
-  motorDX.run(RELEASE);
-  motorSX.run(RELEASE);
+  
+  digitalWrite(LED1_PIN, HIGH);
   
 }
 
@@ -91,20 +91,20 @@ void loop() {
 
 void Controllo_Orientamneto(double signal){
    if(signal> SOGLIA){
-      motorDX.run(FORWARD);
-      motorSX.run(BACKWARD);
-      motorDX.setSpeed(int(s_z*255));
-      motorSX.setSpeed(int(s_z*255));
+      digitalWrite(DIRA, HIGH);
+      digitalWrite(DIRB, HIGH);
+      analogWrite(PIN_M_dx, int(s_z*255));
+      analogWrite(PIN_M_sx, int(s_z*255));
       
     }else if (signal< -SOGLIA){
-      motorDX.run(BACKWARD);
-      motorSX.run(FORWARD);
-      motorDX.setSpeed(int(-s_z*255));
-      motorSX.setSpeed(int(-s_z*255));
+      digitalWrite(DIRA, LOW);
+      digitalWrite(DIRB, LOW);
+      analogWrite(PIN_M_dx, int(-s_z*255));
+      analogWrite(PIN_M_sx, int(-s_z*255));
 
     }else if (abs(signal)<=SOGLIA){
-      motorDX.run(RELEASE);
-      motorSX.run(RELEASE);    
+      //analogWrite(PIN_M_dx, NULL);
+      //analogWrite(PIN_M_sx, NULL);
     }
 }
 
@@ -113,17 +113,17 @@ void Controllo_Orientamneto(double signal){
 void Controllo_Velocita(char signal){
    switch(signal){
     case 'f':
-      motorDX.run(FORWARD);
-      motorSX.run(FORWARD);
-      motorDX.setSpeed(255);
-      motorSX.setSpeed(255);
+      digitalWrite(DIRA, HIGH);
+      digitalWrite(DIRB, LOW);
+      analogWrite(PIN_M_dx, 255);
+      analogWrite(PIN_M_sx, 255);
       break;
       
     case 'b':
-      motorDX.run(BACKWARD);
-      motorSX.run(BACKWARD);
-      motorDX.setSpeed(255);
-      motorSX.setSpeed(255);
+      digitalWrite(DIRA, LOW);
+      digitalWrite(DIRB, HIGH);
+      analogWrite(PIN_M_dx, 255);
+      analogWrite(PIN_M_sx, 255);
       break;
 
     default :
