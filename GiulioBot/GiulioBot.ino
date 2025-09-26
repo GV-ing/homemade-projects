@@ -91,13 +91,13 @@ void loop() {
 
 void Controllo_Orientamneto(double signal){
    if(signal> SOGLIA){
-      digitalWrite(DIRA, HIGH);
+      digitalWrite(DIRA, LOW);
       digitalWrite(DIRB, HIGH);
       analogWrite(PIN_M_dx, int(s_z*255));
       analogWrite(PIN_M_sx, int(s_z*255));
       
     }else if (signal< -SOGLIA){
-      digitalWrite(DIRA, LOW);
+      digitalWrite(DIRA, HIGH);
       digitalWrite(DIRB, LOW);
       analogWrite(PIN_M_dx, int(-s_z*255));
       analogWrite(PIN_M_sx, int(-s_z*255));
@@ -113,14 +113,14 @@ void Controllo_Orientamneto(double signal){
 void Controllo_Velocita(char signal){
    switch(signal){
     case 'f':
-      digitalWrite(DIRA, HIGH);
+      digitalWrite(DIRA, LOW);
       digitalWrite(DIRB, LOW);
       analogWrite(PIN_M_dx, 255);
       analogWrite(PIN_M_sx, 255);
       break;
       
     case 'b':
-      digitalWrite(DIRA, LOW);
+      digitalWrite(DIRA, HIGH);
       digitalWrite(DIRB, HIGH);
       analogWrite(PIN_M_dx, 255);
       analogWrite(PIN_M_sx, 255);
